@@ -30,7 +30,7 @@ def main():
         try:
             result_df, execution_time = run_query_1(spark, DATA_PATHS, mode=mode)
             
-            print(f"Execution Time: {execution_time:.4f} seconds")
+            print(f"\nExecution Time: {execution_time:.4f} seconds")
             print("\nResults:")
             result_df.show(truncate=False)
             

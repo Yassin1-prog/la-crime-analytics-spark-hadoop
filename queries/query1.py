@@ -89,7 +89,7 @@ def query1_rdd(crime_df):
     return result_df
 
 # -----------------------------
-# Main function to run Query 1
+# Main function to run all modes of Query 1
 # -----------------------------
 def run_query_1(spark, data_paths, mode="df"):
     crime_df = _load_crime_df(spark, data_paths)
@@ -104,3 +104,26 @@ def run_query_1(spark, data_paths, mode="df"):
         raise ValueError("Invalid mode. Use 'df', 'df_udf', or 'rdd'.")
     
     return result_df, exec_time
+
+
+# to run as a standalone script for the MODE specified
+if __name__ == "__main__":
+    from utils.spark_setup import get_spark_session
+    from utils.config import DATA_PATHS
+
+    config_options = {
+        'spark.executor.instances': '4',
+        'spark.executor.cores': '1',
+        'spark.executor.memory': '2g'
+    }
+    spark = get_spark_session(app_name="Query1Test", config_options=config_options)
+    
+    # Specify the mode here: "df", "df_udf", or "rdd"
+    MODE = "df"
+
+    print(f"\nRunning Query 1 in mode: {MODE}")
+    result_df, exec_time = run_query_1(spark, DATA_PATHS, mode=MODE)
+    print(f"Execution Time: {exec_time:.4f} seconds")
+    result_df.show(truncate=False)
+    
+    spark.stop()
