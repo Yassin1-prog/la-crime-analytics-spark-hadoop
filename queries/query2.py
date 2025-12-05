@@ -18,8 +18,12 @@ def _load_crime_df(spark, crime_data_paths):
     crime_df = df_2010_2019.unionByName(df_2020_present)
     return crime_df
 
+
 def _load_race_codes(spark, race_codes_path):
     race_codes_df = spark.read.csv(race_codes_path, header=True, inferSchema=True)
+    # Rename columns to avoid ambiguity
+    race_codes_df = race_codes_df.withColumnRenamed("Vict Descent", "Code") \
+                                   .withColumnRenamed("Vict Descent Full", "Description")
     return race_codes_df
 
 
@@ -36,11 +40,11 @@ def query2_df(crime_df, race_codes_df):
     # Join with race codes to get full descriptions
     crime_with_race = crime_with_year.join(
         race_codes_df,
-        crime_with_year["Vict Descent"] == race_codes_df["Vict Descent"],
+        crime_with_year["Vict Descent"] == race_codes_df["Code"],
         "left"
     ).select(
-        "Year",
-        F.coalesce(F.col("Description"), F.col("Vict Descent")).alias("Victim Descent")
+        crime_with_year["Year"],
+        F.coalesce(race_codes_df["Description"], crime_with_year["Vict Descent"]).alias("Victim Descent")
     )
     
     # Count victims per year and descent
@@ -88,7 +92,7 @@ def query2_sql(crime_df, race_codes_df, spark):
             c.Year,
             COALESCE(r.Description, c.`Vict Descent`) AS `Victim Descent`
         FROM crime_with_year c
-        LEFT JOIN race_codes r ON c.`Vict Descent` = r.`Vict Descent`
+        LEFT JOIN race_codes r ON c.`Vict Descent` = r.Code
     ),
     victim_counts AS (
         SELECT 
