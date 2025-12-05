@@ -12,7 +12,6 @@ from utils.timing import run_and_time
 
 
 def _load_crime_df(spark, crime_data_paths):
-    """Load and union crime data from both time periods."""
     df_2010_2019 = spark.read.csv(crime_data_paths["crime_data_2010_2019"], header=True, inferSchema=True)
     df_2020_present = spark.read.csv(crime_data_paths["crime_data_2020_present"], header=True, inferSchema=True)
     crime_df = df_2010_2019.unionByName(df_2020_present)
@@ -20,10 +19,6 @@ def _load_crime_df(spark, crime_data_paths):
 
 
 def _load_mo_codes(spark, mo_codes_path):
-    """
-    Load MO Codes from text file.
-    Format: code at start of line, separated from description by a space.
-    """
     # Read as text file
     text_rdd = spark.sparkContext.textFile(mo_codes_path)
     
@@ -44,15 +39,6 @@ def _load_mo_codes(spark, mo_codes_path):
 # DataFrame implementation
 # -----------------------------
 def query3_df(crime_df, mo_codes_df, join_strategy=None):
-    """
-    Query 3 using DataFrame API:
-    Rank and display crime methods (Mocodes) by frequency with descriptions.
-    
-    Args:
-        crime_df: Crime DataFrame
-        mo_codes_df: MO Codes DataFrame
-        join_strategy: Optional join strategy hint (BROADCAST, MERGE, SHUFFLE_HASH, SHUFFLE_REPLICATE_NL)
-    """
     # Explode Mocodes column (contains space-separated codes)
     crime_with_codes = crime_df.select(
         F.explode(F.split(F.col("Mocodes"), " ")).alias("Code")
@@ -87,10 +73,6 @@ def query3_df(crime_df, mo_codes_df, join_strategy=None):
 # RDD implementation
 # -----------------------------
 def query3_rdd(crime_df, mo_codes_df):
-    """
-    Query 3 using RDD API:
-    Rank and display crime methods (Mocodes) by frequency with descriptions.
-    """
     # Extract Mocodes column as RDD
     mocodes_rdd = crime_df.select("Mocodes").rdd
     
@@ -126,21 +108,6 @@ def query3_rdd(crime_df, mo_codes_df):
 # Main function to run all modes of Query 3
 # -----------------------------
 def run_query_3(spark, data_paths, mode="df", join_strategy=None, explain=False):
-    """
-    Execute Query 3 in specified mode.
-    
-    Args:
-        spark: SparkSession
-        data_paths: Dictionary containing S3 paths to data
-        mode: "df" for DataFrame API or "rdd" for RDD API
-        join_strategy: For DataFrame mode, join strategy hint 
-                      (BROADCAST, MERGE, SHUFFLE_HASH, SHUFFLE_REPLICATE_NL)
-        explain: If True, show query execution plan
-    
-    Returns:
-        result_df: DataFrame with query results
-        exec_time: Execution time in seconds
-    """
     crime_df = _load_crime_df(spark, data_paths)
     mo_codes_df = _load_mo_codes(spark, data_paths["mo_codes"])
 
