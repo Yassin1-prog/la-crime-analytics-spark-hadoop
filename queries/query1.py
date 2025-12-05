@@ -1,3 +1,12 @@
+import sys
+import os
+
+# Add project root to sys.path for module imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from pyspark.sql import functions as F
 from pyspark.sql.types import StringType, IntegerType
 from utils.timing import run_and_time
