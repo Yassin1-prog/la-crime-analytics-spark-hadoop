@@ -1,6 +1,6 @@
 from utils.spark_setup import get_spark_session
 from utils.config import DATA_PATHS
-from queries.query1 import run_query1
+from queries.query1 import run_query_1
 
 
 def main():
@@ -28,7 +28,7 @@ def main():
         print(f"\n--- Mode: {mode_descriptions[mode]} ---")
         
         try:
-            result_df, execution_time = run_query1(spark, DATA_PATHS, mode=mode)
+            result_df, execution_time = run_query_1(spark, DATA_PATHS, mode=mode)
             
             print(f"Execution Time: {execution_time:.4f} seconds")
             print("\nResults:")
