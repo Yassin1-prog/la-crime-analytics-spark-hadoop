@@ -8,128 +8,137 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from pyspark.sql import functions as F
-from pyspark.sql import Window
-from pyspark.sql.types import IntegerType
+from pyspark.sql.window import Window
 from utils.timing import run_and_time
 
 def _load_data(spark, data_paths):
     """
-    Loads Crime Data and Race/Ethnicity Codes.
+    Loads crime data and race/ethnicity codes.
     """
-    # Load Crime Data (2010-2019 and 2020-Present)
+    # Load Crime Data (2010-2019 and 2020-Present) [cite: 26, 27]
     df_2010_2019 = spark.read.csv(data_paths["crime_data_2010_2019"], header=True, inferSchema=True)
     df_2020_present = spark.read.csv(data_paths["crime_data_2020_present"], header=True, inferSchema=True)
     crime_df = df_2010_2019.unionByName(df_2020_present)
     
-    # Load Race Codes
-    race_codes_df = spark.read.csv(data_paths["race_codes"], header=True, inferSchema=True)
+    # Load Race Codes [cite: 33]
+    re_codes_df = spark.read.csv(data_paths["race_codes"], header=True, inferSchema=True)
     
-    return crime_df, race_codes_df
+    return crime_df, re_codes_df
 
 # -----------------------------
-# DataFrame Implementation
+# DataFrame API Implementation
 # -----------------------------
-def query2_df(crime_df, race_codes_df):
+def query2_df(crime_df, re_codes_df):
     # 1. Extract Year from DATE OCC
-    # Note: Using to_timestamp to handle standard LA data format "MM/dd/yyyy hh:mm:ss a" safely
+    # Format based on description: "yyyy MMM dd hh:mm:ss a"
+    # We transform string to timestamp, then extract year
     crime_with_year = crime_df.withColumn(
-        "Year", 
+        "year", 
         F.year(F.to_timestamp(F.col("DATE OCC"), "MM/dd/yyyy hh:mm:ss a"))
     )
 
-    # 2. Join with Race Codes to get "Vict Descent Full"
-    # Performing an inner join to ensure we only count valid codes
-    joined_df = crime_with_year.join(race_codes_df, on="Vict Descent", how="inner")
-
-    # 3. Group by Year and Descent, then count
-    grouped_df = joined_df.groupBy("Year", "Vict Descent Full").count()
-
-    # 4. Calculate Total Victims per Year (for percentage calculation)
-    window_year = Window.partitionBy("Year")
-    with_totals = grouped_df.withColumn("year_total", F.sum("count").over(window_year))
-
-    # 5. Calculate Percentage
-    with_percent = with_totals.withColumn(
-        "%", 
-        F.round((F.col("count") / F.col("year_total")) * 100, 1)
+    # 2. Join with Race Codes to get Full Description
+    # We use a left join to ensure we keep records even if code mapping is missing (though typically we want the description)
+    joined_df = crime_with_year.join(
+        re_codes_df, 
+        crime_with_year["Vict Descent"] == re_codes_df["Vict Descent"], 
+        "inner"
+    ).select(
+        F.col("year"),
+        F.col("Vict Descent Full").alias("Victim_Descent")
     )
 
-    # 6. Rank to find Top 3
-    window_rank = Window.partitionBy("Year").orderBy(F.col("count").desc())
-    with_rank = with_percent.withColumn("rn", F.row_number().over(window_rank))
+    # 3. Group by Year and Descent to get counts
+    grouped_counts = joined_df.groupBy("year", "Victim_Descent").count()
 
-    # 7. Filter Top 3 and Select/Rename columns to match Table 2 spec
-    result_df = with_rank.filter(F.col("rn") <= 3) \
+    # 4. Window functions for Total per Year and Ranking
+    window_year = Window.partitionBy("year")
+    window_rank = Window.partitionBy("year").orderBy(F.col("count").desc())
+
+    final_df = grouped_counts.withColumn(
+        "total_victims_year", 
+        F.sum("count").over(window_year)
+    ).withColumn(
+        "percentage", 
+        F.format_number((F.col("count") / F.col("total_victims_year")) * 100, 1)
+    ).withColumn(
+        "rank", 
+        F.rank().over(window_rank)
+    )
+
+    # 5. Filter top 3 and format output
+    result = final_df.filter(F.col("rank") <= 3)\
         .select(
-            F.col("Year").alias("year"),
-            F.col("Vict Descent Full").alias("Victim Descent"),
+            F.col("year"),
+            F.col("Victim_Descent").alias("Victim Descent"),
             F.col("count").alias("#"),
-            F.col("%")
-        ) \
+            F.col("percentage").alias("%")
+        )\
         .orderBy(F.col("year").desc(), F.col("#").desc())
 
-    return result_df
+    return result
 
 # -----------------------------
-# SQL Implementation
+# SQL API Implementation
 # -----------------------------
-def query2_sql(spark, crime_df, race_codes_df):
-    # Register Temp Views
+def query2_sql(spark, crime_df, re_codes_df):
+    # Register Temporary Views
     crime_df.createOrReplaceTempView("crime_data")
-    race_codes_df.createOrReplaceTempView("race_codes")
+    re_codes_df.createOrReplaceTempView("re_codes")
 
-    query = """
+    sql_query = """
     WITH CrimeWithYear AS (
         SELECT 
-            year(to_timestamp(`DATE OCC`, 'MM/dd/yyyy hh:mm:ss a')) as Year,
-            `Vict Descent`
+            year(to_timestamp(`DATE OCC`, 'MM/dd/yyyy hh:mm:ss a')) as year,
+            `Vict Descent` as v_code
         FROM crime_data
     ),
-    JoinedCounts AS (
+    JoinedData AS (
         SELECT 
-            c.Year,
-            r.`Vict Descent Full`,
-            COUNT(*) as count
+            c.year,
+            r.`Vict Descent Full` as victim_desc
         FROM CrimeWithYear c
-        JOIN race_codes r ON c.`Vict Descent` = r.`Vict Descent`
-        WHERE c.Year IS NOT NULL
-        GROUP BY 1, 2
+        JOIN re_codes r ON c.v_code = r.`Vict Descent`
     ),
-    WithTotals AS (
+    GroupedCounts AS (
         SELECT 
-            Year,
-            `Vict Descent Full`,
-            count,
-            SUM(count) OVER (PARTITION BY Year) as year_total
-        FROM JoinedCounts
+            year,
+            victim_desc,
+            COUNT(*) as victims_count
+        FROM JoinedData
+        GROUP BY year, victim_desc
     ),
-    Ranked AS (
+    CalculatedMetrics AS (
         SELECT 
-            Year as year,
-            `Vict Descent Full` as `Victim Descent`,
-            count as `#`,
-            ROUND((count / year_total) * 100, 1) as `%`,
-            ROW_NUMBER() OVER (PARTITION BY Year ORDER BY count DESC) as rn
-        FROM WithTotals
+            year,
+            victim_desc,
+            victims_count,
+            SUM(victims_count) OVER (PARTITION BY year) as total_year,
+            RANK() OVER (PARTITION BY year ORDER BY victims_count DESC) as rnk
+        FROM GroupedCounts
     )
-    SELECT year, `Victim Descent`, `#`, `%`
-    FROM Ranked
-    WHERE rn <= 3
-    ORDER BY year DESC, `#` DESC
+    SELECT 
+        year,
+        victim_desc as `Victim Descent`,
+        victims_count as `#`,
+        format_number((victims_count / total_year) * 100, 1) as `%`
+    FROM CalculatedMetrics
+    WHERE rnk <= 3
+    ORDER BY year DESC, victims_count DESC
     """
     
-    return spark.sql(query)
+    return spark.sql(sql_query)
 
 # -----------------------------
-# Main function for Query 2
+# Main Runner for Query 2
 # -----------------------------
 def run_query_2(spark, data_paths, mode="df"):
-    crime_df, race_codes_df = _load_data(spark, data_paths)
+    crime_df, re_codes_df = _load_data(spark, data_paths)
 
     if mode == "df":
-        result_df, exec_time = run_and_time(lambda: query2_df(crime_df, race_codes_df))
+        result_df, exec_time = run_and_time(lambda: query2_df(crime_df, re_codes_df))
     elif mode == "sql":
-        result_df, exec_time = run_and_time(lambda: query2_sql(spark, crime_df, race_codes_df))
+        result_df, exec_time = run_and_time(lambda: query2_sql(spark, crime_df, re_codes_df))
     else:
         raise ValueError("Invalid mode. Use 'df' or 'sql'.")
     
@@ -139,19 +148,23 @@ if __name__ == "__main__":
     from utils.spark_setup import get_spark_session
     from utils.config import DATA_PATHS
 
-    # Configuration per specs: 4 executors, 1 core, 2GB RAM [cite: 93]
+    # Configuration based on specs: 4 executors, 1 core, 2GB memory [cite: 93]
     config_options = {
         'spark.executor.instances': '4',
         'spark.executor.cores': '1',
         'spark.executor.memory': '2g'
     }
+    
     spark = get_spark_session(app_name="Query2Test", config_options=config_options)
     
-    MODE = "df" # Change to "sql" to test SQL implementation
-
-    print(f"\nRunning Query 2 in mode: {MODE}")
-    result_df, exec_time = run_query_2(spark, DATA_PATHS, mode=MODE)
-    print(f"Execution Time: {exec_time:.4f} seconds")
-    result_df.show(n=20, truncate=False)
+    # Test both modes
+    for mode in ["df", "sql"]:
+        print(f"\nRunning Query 2 in mode: {mode}")
+        try:
+            result_df, exec_time = run_query_2(spark, DATA_PATHS, mode=mode)
+            print(f"Execution Time: {exec_time:.4f} seconds")
+            result_df.show(20, truncate=False)
+        except Exception as e:
+            print(f"Error: {e}")
     
     spark.stop()
