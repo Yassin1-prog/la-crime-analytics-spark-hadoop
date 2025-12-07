@@ -100,6 +100,23 @@ def main():
     print("\n" + "=" * 60)
     print("Execution Complete")
     print("=" * 60)
+
+    # ========== Query 5 ==========
+    print("\n" + "=" * 60)
+    print("Running Query 5: Income vs Crime Correlation")
+    print("=" * 60)
+    
+    try:
+        # Explain=True to analyze join strategies
+        exec_time = run_query_5(spark, DATA_PATHS, explain=True)
+        print(f"\nExecution Time: {exec_time:.4f} seconds")
+        
+    except Exception as e:
+        print(f"Error running Query 5: {e}")
+    
+    print("\n" + "=" * 60)
+    print("Execution Complete")
+    print("=" * 60)
     
     # Stop Spark session
     spark.stop()
