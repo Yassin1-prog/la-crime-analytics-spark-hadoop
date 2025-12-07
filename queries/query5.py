@@ -27,27 +27,7 @@ def _load_data(spark, data_paths):
     ).filter(F.col("year").isin([2020, 2021]))
 
     # 2. Load Census Blocks (GeoJSON) - Robust Manual Parse
-    # The native "geojson" reader crashed on this dataset due to internal NullPointerExceptions.
-    # We read as standard JSON (multiLine handles FeatureCollection) and parse geometry manually.
-    raw_geo_df = spark.read.option("multiLine", "true").json(data_paths["census_blocks"])
-    
-    # Check if it's a standard FeatureCollection with a 'features' array
-    if "features" in raw_geo_df.columns:
-        # Explode the features array to get one row per block
-        exploded_df = raw_geo_df.select(F.explode(F.col("features")).alias("feature"))
-        
-        # Extract Properties and Convert Geometry
-        # We use ST_GeomFromGeoJSON(to_json(feature.geometry)) to convert the JSON struct to Geometry
-        census_blocks_df = exploded_df.select(
-            F.col("feature.properties.COMM").alias("COMM"),
-            F.col("feature.properties.POP20").alias("POP20"),
-            F.col("feature.properties.ZCTA20").alias("ZCTA20"),
-            ST_GeomFromGeoJSON(F.to_json(F.col("feature.geometry"))).alias("geometry")
-        ).filter(F.col("geometry").isNotNull()) # Safety filter
-        
-    else:
-        # Fallback: If not a FeatureCollection, attempt native read (unlikely to reach here given source)
-        census_blocks_df = spark.read.format("geojson").load(data_paths["census_blocks"])
+    census_blocks_df = spark.read.format("geojson").load(data_paths["census_blocks"])
 
     # 3. Load Income Data (CSV with ';' delimiter)
     # "Median Household Income ... delimitter ';'"
@@ -87,9 +67,13 @@ def query5_execution(spark, crime_df, census_blocks_df, income_df):
     # The _load_data function now ensures these columns are top-level
     census_df = census_blocks_df.select(
         F.col("geometry"),
-        F.col("COMM"),
-        F.col("POP20").cast(IntegerType()).alias("population"),
-        F.col("ZCTA20").cast(IntegerType()).alias("geo_zip")
+        F.col("properties.COMM"),
+        F.col("properties.POP20").cast(IntegerType()).alias("population"),
+        F.col("properties.ZCTA20").cast(IntegerType()).alias("geo_zip")
+    ).filter(
+        F.col("geometry").isNotNull() &
+        F.col("properties.COMM").isNotNull() &
+        F.col("population").isNotNull()  
     )
 
     # --- AGGREGATION: INCOME PER COMMUNITY ---
