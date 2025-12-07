@@ -1,12 +1,41 @@
+import sys
+from datetime import datetime
 from utils.spark_setup import get_spark_session
 from utils.config import DATA_PATHS
 from queries.query1 import run_query_1
 from queries.query2 import run_query_2
 from queries.query3 import run_query_3
 from queries.query4 import run_query_4
+from queries.query5 import run_query_5
+
+
+class Tee:
+    """Write to both stdout and a file simultaneously"""
+    def __init__(self, filename):
+        self.terminal = sys.stdout
+        self.log = open(filename, 'w', encoding='utf-8')
+    
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+    
+    def flush(self):
+        self.terminal.flush()
+        self.log.flush()
+    
+    def close(self):
+        self.log.close()
 
 
 def main():
+    # Setup output logging to file
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_file = f"output_{timestamp}.txt"
+    tee = Tee(output_file)
+    sys.stdout = tee
+    
+    print(f"Output will be saved to: {output_file}\n")
+    
     # Initialize Spark session
     config_options = {
         'spark.executor.instances': '4',
@@ -83,43 +112,65 @@ def main():
     print("Execution Complete")
     print("=" * 60)
 
+    # Stop Spark session
+    # queries 4 & 5 will re-initialize Spark session
+    spark.stop()
 
     # ========== Query 4 ==========
     print("\n" + "=" * 60)
     print("Running Query 4: Nearest Police Stations Analysis")
     print("=" * 60)
+
+    configs = [(1,2), (2,4), (4,8)]  # (cores, memory in GB)
     
-    try:
-        # explain=True will print the physical plan to help analyze the join strategy 
-        exec_time = run_query_4(spark, DATA_PATHS, explain=True)
-        print(f"\nExecution Time: {exec_time:.4f} seconds")
+    for cores, memory in configs:
+        print(f"\n--- Config: {cores} Cores, {memory}GB Memory ---")
         
-    except Exception as e:
-        print(f"Error running Query 4: {e}")
+        config_options = {
+            'spark.executor.instances': '4',
+            'spark.executor.cores': str(cores),
+            'spark.executor.memory': f'{memory}g'
+        }
+        spark = get_spark_session(app_name="Query4Test", config_options=config_options)
+
+        try:
+            # explain=True will print the physical plan to help analyze the join strategy 
+            exec_time = run_query_4(spark, DATA_PATHS, explain=True)
+            print(f"\nExecution Time: {exec_time:.4f} seconds")
+            
+        except Exception as e:
+            print(f"Error running Query 4: {e}")
+
+        spark.stop()
 
     print("\n" + "=" * 60)
     print("Execution Complete")
     print("=" * 60)
 
     # ========== Query 5 ==========
-    print("\n" + "=" * 60)
-    print("Running Query 5: Income vs Crime Correlation")
-    print("=" * 60)
+    # print("\n" + "=" * 60)
+    # print("Running Query 5: Income vs Crime Correlation")
+    # print("=" * 60)
     
-    try:
-        # Explain=True to analyze join strategies
-        exec_time = run_query_5(spark, DATA_PATHS, explain=True)
-        print(f"\nExecution Time: {exec_time:.4f} seconds")
+    # try:
+    #     # Explain=True to analyze join strategies
+    #     exec_time = run_query_5(spark, DATA_PATHS, explain=True)
+    #     print(f"\nExecution Time: {exec_time:.4f} seconds")
         
-    except Exception as e:
-        print(f"Error running Query 5: {e}")
+    # except Exception as e:
+    #     print(f"Error running Query 5: {e}")
     
-    print("\n" + "=" * 60)
-    print("Execution Complete")
-    print("=" * 60)
+    # print("\n" + "=" * 60)
+    # print("Execution Complete")
+    # print("=" * 60)
     
     # Stop Spark session
     spark.stop()
+    
+    # Restore stdout and close file
+    sys.stdout = tee.terminal
+    tee.close()
+    print(f"\nOutput saved to: {output_file}")
 
 if __name__ == "__main__":
     main()
