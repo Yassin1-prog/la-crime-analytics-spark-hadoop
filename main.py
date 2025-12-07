@@ -3,6 +3,7 @@ from utils.config import DATA_PATHS
 from queries.query1 import run_query_1
 from queries.query2 import run_query_2
 from queries.query3 import run_query_3
+from queries.query4 import run_query_4
 
 
 def main():
@@ -78,6 +79,24 @@ def main():
         except Exception as e:
             print(f"Error running Query 3 in {mode} mode: {e}")
     
+    print("\n" + "=" * 60)
+    print("Execution Complete")
+    print("=" * 60)
+
+
+    # ========== Query 4 ==========
+    print("\n" + "=" * 60)
+    print("Running Query 4: Nearest Police Stations Analysis")
+    print("=" * 60)
+    
+    try:
+        # explain=True will print the physical plan to help analyze the join strategy 
+        exec_time = run_query_4(spark, DATA_PATHS, explain=True)
+        print(f"\nExecution Time: {exec_time:.4f} seconds")
+        
+    except Exception as e:
+        print(f"Error running Query 4: {e}")
+
     print("\n" + "=" * 60)
     print("Execution Complete")
     print("=" * 60)
