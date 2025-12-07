@@ -157,14 +157,12 @@ if __name__ == "__main__":
     
     spark = get_spark_session(app_name="Query2Test", config_options=config_options)
     
-    # Test both modes
-    for mode in ["df", "sql"]:
-        print(f"\nRunning Query 2 in mode: {mode}")
-        try:
-            result_df, exec_time = run_query_2(spark, DATA_PATHS, mode=mode)
-            print(f"Execution Time: {exec_time:.4f} seconds")
-            result_df.show(20, truncate=False)
-        except Exception as e:
-            print(f"Error: {e}")
+    # Specify the mode here: "df" or "sql"
+    MODE = "df"
+
+    print(f"\nRunning Query 2 in mode: {MODE}")
+    result_df, exec_time = run_query_2(spark, DATA_PATHS, mode=MODE)
+    print(f"Execution Time: {exec_time:.4f} seconds")
+    result_df.show(20, truncate=False)
     
     spark.stop()
