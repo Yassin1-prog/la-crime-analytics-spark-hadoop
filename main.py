@@ -30,8 +30,8 @@ def main():
         print(f"\n--- Mode: {mode_descriptions_q1[mode]} ---")
         
         try:
-            execution_time = run_query_1(spark, DATA_PATHS, mode=mode)
-            print(f"\nExecution Time: {execution_time:.4f} seconds")
+            exec_time = run_query_1(spark, DATA_PATHS, mode=mode)
+            print(f"\nExecution Time: {exec_time:.4f} seconds")
             
         except Exception as e:
             print(f"Error running Query 1 in {mode} mode: {e}")
@@ -51,8 +51,8 @@ def main():
         print(f"\n--- Mode: {mode_descriptions_q2[mode]} ---")
         
         try:
-            execution_time = run_query_2(spark, DATA_PATHS, mode=mode) 
-            print(f"\nExecution Time: {execution_time:.4f} seconds")
+            exec_time = run_query_2(spark, DATA_PATHS, mode=mode) 
+            print(f"\nExecution Time: {exec_time:.4f} seconds")
             
         except Exception as e:
             print(f"Error running Query 2 in {mode} mode: {e}")
@@ -72,8 +72,8 @@ def main():
         print(f"\n--- Mode: {mode_descriptions_q3[mode]} ---")
         
         try:
-            execution_time = run_query_3(spark, DATA_PATHS, mode=mode)
-            print(f"\nExecution Time: {execution_time:.4f} seconds")
+            exec_time = run_query_3(spark, DATA_PATHS, mode=mode)
+            print(f"\nExecution Time: {exec_time:.4f} seconds")
             
         except Exception as e:
             print(f"Error running Query 3 in {mode} mode: {e}")
