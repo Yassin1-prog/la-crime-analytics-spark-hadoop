@@ -9,7 +9,8 @@ if project_root not in sys.path:
 
 from pyspark.sql import functions as F
 from pyspark.sql.types import DoubleType, IntegerType
-from sedona.spark.sql import ST_Point, ST_Contains
+# Import ST_GeomFromGeoJSON for manual parsing
+from sedona.spark.sql import ST_Point, ST_Contains, ST_GeomFromGeoJSON
 from utils.timing import run_and_time
 
 def _load_data(spark, data_paths):
@@ -17,7 +18,6 @@ def _load_data(spark, data_paths):
     Loads Crime, Census Blocks, and Income data.
     """
     # 1. Load Crime Data (2020-Present) and filter for 2020-2021
-    # "calculate within the 2-year period 2020-2021"
     df_2020_present = spark.read.csv(data_paths["crime_data_2020_present"], header=True, inferSchema=True)
     
     # Extract Year and Filter
@@ -26,10 +26,29 @@ def _load_data(spark, data_paths):
         F.year(F.to_timestamp(F.col("DATE OCC"), "yyyy MMM dd hh:mm:ss a"))
     ).filter(F.col("year").isin([2020, 2021]))
 
-    # 2. Load Census Blocks (GeoJSON)
-    # Uses Sedona's GeoJSON reader
-    census_blocks_df = spark.read.format("geojson").load(data_paths["census_blocks"])
+    # 2. Load Census Blocks (GeoJSON) - Robust Manual Parse
+    # The native "geojson" reader crashed on this dataset due to internal NullPointerExceptions.
+    # We read as standard JSON (multiLine handles FeatureCollection) and parse geometry manually.
+    raw_geo_df = spark.read.option("multiLine", "true").json(data_paths["census_blocks"])
     
+    # Check if it's a standard FeatureCollection with a 'features' array
+    if "features" in raw_geo_df.columns:
+        # Explode the features array to get one row per block
+        exploded_df = raw_geo_df.select(F.explode(F.col("features")).alias("feature"))
+        
+        # Extract Properties and Convert Geometry
+        # We use ST_GeomFromGeoJSON(to_json(feature.geometry)) to convert the JSON struct to Geometry
+        census_blocks_df = exploded_df.select(
+            F.col("feature.properties.COMM").alias("COMM"),
+            F.col("feature.properties.POP20").alias("POP20"),
+            F.col("feature.properties.ZCTA20").alias("ZCTA20"),
+            ST_GeomFromGeoJSON(F.to_json(F.col("feature.geometry"))).alias("geometry")
+        ).filter(F.col("geometry").isNotNull()) # Safety filter
+        
+    else:
+        # Fallback: If not a FeatureCollection, attempt native read (unlikely to reach here given source)
+        census_blocks_df = spark.read.format("geojson").load(data_paths["census_blocks"])
+
     # 3. Load Income Data (CSV with ';' delimiter)
     # "Median Household Income ... delimitter ';'"
     income_df = spark.read.option("delimiter", ";").csv(data_paths["median_income"], header=True, inferSchema=True)
@@ -65,10 +84,7 @@ def query5_execution(spark, crime_df, census_blocks_df, income_df):
 
     # 3. Prepare Census Data
     # Ensure necessary columns exist (Geometry, COMM, POP20, ZCTA20)
-    # Based on standard LA 2020 Census Block schema:
-    # COMM: Community Name
-    # POP20: Population
-    # ZCTA20: Zip Code
+    # The _load_data function now ensures these columns are top-level
     census_df = census_blocks_df.select(
         F.col("geometry"),
         F.col("properties.COMM"),
@@ -99,10 +115,6 @@ def query5_execution(spark, crime_df, census_blocks_df, income_df):
 
     # Join Crimes to Census Blocks (Spatial Join) to find which COMM they belong to.
     # We join valid_crime_df points to census_df polygons.
-    # Note: We join to the raw census_df geometries first, then group by COMM.
-    
-    # Optimization: Broadcast the Census Blocks if they fit in memory (LA Blocks ~80k rows, might be large but likely fits).
-    # However, Sedona handles spatial joins efficiently.
     
     crime_joined_df = valid_crime_df.alias("c").join(
         census_df.alias("b"),
@@ -143,11 +155,6 @@ def query5_execution(spark, crime_df, census_blocks_df, income_df):
     # 2. Top 10 Income Areas
     # "examining only the 10 areas with the highest ... income"
     top_10_df = analysis_df.orderBy(F.col("avg_income").desc()).limit(10)
-    # Note: Spark's stat.corr works on the whole dataframe. To correlation on top 10, we must compute on the filtered DF.
-    # Since .limit() returns a DataFrame, we can run stat.corr on it? 
-    # Actually stat.corr is an action on the DataFrame. 
-    # But limit() might prevent reliable stat.corr in some versions without caching/collecting, 
-    # but logically it works.
     top_10_corr = top_10_df.stat.corr("avg_income", "crime_rate")
     print(f"Top 10 High Income Areas Correlation:       {top_10_corr:.4f}")
 
@@ -173,7 +180,6 @@ def main():
     from utils.config import DATA_PATHS
 
     # Resource Config
-    # Example config (one of the requested configurations)
     config_options = {
         'spark.executor.instances': '2',
         'spark.executor.cores': '4',
