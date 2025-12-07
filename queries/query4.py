@@ -10,7 +10,7 @@ if project_root not in sys.path:
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 # Import Sedona functions
-from sedona.sql.st_functions import ST_Point, ST_DistanceSphere
+from sedona.spark.sql import ST_Point, ST_DistanceSphere
 from utils.timing import run_and_time
 
 def _load_data(spark, data_paths):
