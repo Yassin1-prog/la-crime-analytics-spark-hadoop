@@ -71,9 +71,9 @@ def query5_execution(spark, crime_df, census_blocks_df, income_df):
     # ZCTA20: Zip Code
     census_df = census_blocks_df.select(
         F.col("geometry"),
-        F.col("COMM"),
-        F.col("POP20").cast(IntegerType()).alias("population"),
-        F.col("ZCTA20").cast(IntegerType()).alias("geo_zip")
+        F.col("properties.COMM"),
+        F.col("properties.POP20").cast(IntegerType()).alias("population"),
+        F.col("properties.ZCTA20").cast(IntegerType()).alias("geo_zip")
     )
 
     # --- AGGREGATION: INCOME PER COMMUNITY ---
