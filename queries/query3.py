@@ -124,8 +124,7 @@ def run_query_3(spark, data_paths, mode="df", join_strategy=None, explain=False)
     return exec_time
 
 
-# to run as a standalone script for the MODE specified
-if __name__ == "__main__":
+def main():
     from utils.spark_setup import get_spark_session
     from utils.config import DATA_PATHS
 
@@ -188,3 +187,8 @@ if __name__ == "__main__":
         print(f"Execution Time: {exec_time:.4f} seconds")
     
     spark.stop()
+
+
+# to run as a standalone script for the MODE specified
+if __name__ == "__main__":
+    main()

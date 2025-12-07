@@ -144,7 +144,7 @@ def run_query_2(spark, data_paths, mode="df"):
     
     return exec_time
 
-if __name__ == "__main__":
+def main():
     from utils.spark_setup import get_spark_session
     from utils.config import DATA_PATHS
 
@@ -165,3 +165,6 @@ if __name__ == "__main__":
     print(f"Execution Time: {exec_time:.4f} seconds")
     
     spark.stop()
+
+if __name__ == "__main__":
+    main()
