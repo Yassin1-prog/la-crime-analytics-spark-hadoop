@@ -136,13 +136,13 @@ def run_query_2(spark, data_paths, mode="df"):
     crime_df, re_codes_df = _load_data(spark, data_paths)
 
     if mode == "df":
-        result_df, exec_time = run_and_time(lambda: query2_df(crime_df, re_codes_df))
+        exec_time = run_and_time(lambda: query2_df(crime_df, re_codes_df))
     elif mode == "sql":
-        result_df, exec_time = run_and_time(lambda: query2_sql(spark, crime_df, re_codes_df))
+        exec_time = run_and_time(lambda: query2_sql(spark, crime_df, re_codes_df))
     else:
         raise ValueError("Invalid mode. Use 'df' or 'sql'.")
     
-    return result_df, exec_time
+    return exec_time
 
 if __name__ == "__main__":
     from utils.spark_setup import get_spark_session
@@ -161,8 +161,7 @@ if __name__ == "__main__":
     MODE = "df"
 
     print(f"\nRunning Query 2 in mode: {MODE}")
-    result_df, exec_time = run_query_2(spark, DATA_PATHS, mode=MODE)
+    exec_time = run_query_2(spark, DATA_PATHS, mode=MODE)
     print(f"Execution Time: {exec_time:.4f} seconds")
-    result_df.show(20, truncate=False)
     
     spark.stop()

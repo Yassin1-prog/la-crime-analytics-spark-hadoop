@@ -157,19 +157,17 @@ if __name__ == "__main__":
         
         # Test without hint (optimizer's choice)
         print("\n--- Optimizer's Choice (No Hint) ---")
-        result_df, exec_time = run_query_3(
+        exec_time = run_query_3(
             spark, DATA_PATHS, mode="df", join_strategy=None, explain=True
         )
         print(f"Execution Time: {exec_time:.4f} seconds")
-        result_df.show(20, truncate=False)
         
         # Test with BROADCAST hint (recommended for small MO codes table)
         print("\n--- With BROADCAST Join Strategy ---")
-        result_df, exec_time = run_query_3(
+        exec_time = run_query_3(
             spark, DATA_PATHS, mode="df", join_strategy="BROADCAST", explain=True
         )
         print(f"Execution Time: {exec_time:.4f} seconds")
-        result_df.show(20, truncate=False)
         
         # Uncomment to test other strategies:
         
@@ -197,8 +195,7 @@ if __name__ == "__main__":
     else:
         # RDD mode
         print(f"\nRunning Query 3 in mode: {MODE}")
-        result_df, exec_time = run_query_3(spark, DATA_PATHS, mode=MODE)
+        exec_time = run_query_3(spark, DATA_PATHS, mode=MODE)
         print(f"Execution Time: {exec_time:.4f} seconds")
-        result_df.show(20, truncate=False)
     
     spark.stop()

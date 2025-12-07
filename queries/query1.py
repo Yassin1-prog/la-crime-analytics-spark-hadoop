@@ -104,15 +104,15 @@ def run_query_1(spark, data_paths, mode="df"):
     crime_df = _load_crime_df(spark, data_paths)
 
     if mode == "df":
-        result_df, exec_time = run_and_time(lambda: query1_df(crime_df))
+        exec_time = run_and_time(lambda: query1_df(crime_df))
     elif mode == "df_udf":
-        result_df, exec_time = run_and_time(lambda: query1_df_udf(crime_df))
+        exec_time = run_and_time(lambda: query1_df_udf(crime_df))
     elif mode == "rdd":
-        result_df, exec_time = run_and_time(lambda: query1_rdd(crime_df))
+        exec_time = run_and_time(lambda: query1_rdd(crime_df))
     else:
         raise ValueError("Invalid mode. Use 'df', 'df_udf', or 'rdd'.")
     
-    return result_df, exec_time
+    return exec_time
 
 
 # to run as a standalone script for the MODE specified
@@ -131,8 +131,7 @@ if __name__ == "__main__":
     MODE = "df"
 
     print(f"\nRunning Query 1 in mode: {MODE}")
-    result_df, exec_time = run_query_1(spark, DATA_PATHS, mode=MODE)
+    exec_time = run_query_1(spark, DATA_PATHS, mode=MODE)
     print(f"Execution Time: {exec_time:.4f} seconds")
-    result_df.show(truncate=False)
     
     spark.stop()
