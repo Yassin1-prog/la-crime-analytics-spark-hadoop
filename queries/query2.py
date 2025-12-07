@@ -34,7 +34,7 @@ def query2_df(crime_df, re_codes_df):
     # We transform string to timestamp, then extract year
     crime_with_year = crime_df.withColumn(
         "year", 
-        F.year(F.to_timestamp(F.col("DATE OCC"), "MM/dd/yyyy hh:mm:ss a"))
+        F.year(F.to_timestamp(F.col("DATE OCC"), "yyyy MMM dd hh:mm:ss a"))
     )
 
     # 2. Join with Race Codes to get Full Description
@@ -89,7 +89,7 @@ def query2_sql(spark, crime_df, re_codes_df):
     sql_query = """
     WITH CrimeWithYear AS (
         SELECT 
-            year(to_timestamp(`DATE OCC`, 'MM/dd/yyyy hh:mm:ss a')) as year,
+            year(to_timestamp(`DATE OCC`, 'yyyy MMM dd hh:mm:ss a')) as year,
             `Vict Descent` as v_code
         FROM crime_data
     ),
