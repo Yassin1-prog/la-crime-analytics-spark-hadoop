@@ -21,7 +21,7 @@ DATA_PATHS = {
     "census_blocks_fields": f"{S3_BUCKET_PATH}/LA_Census_Blocks_2020_fields.csv",
     
     # Median Household Income by Zip Code [cite: 32]
-    "median_income": f"{S3_BUCKET_PATH}/LA_Income_2021.csv",
+    "median_income": f"{S3_BUCKET_PATH}/LA_income_2021.csv",
     
     # LA Police Stations [cite: 34]
     "police_stations": f"{S3_BUCKET_PATH}/LA_Police_Stations.csv",
