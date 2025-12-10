@@ -20,14 +20,33 @@ def _load_data(spark, data_paths):
     # 1. Load Crime Data (2020-Present) and filter for 2020-2021
     df_2020_present = spark.read.csv(data_paths["crime_data_2020_present"], header=True, inferSchema=True)
     
-    # Extract Year and Filter
     crime_df = df_2020_present.withColumn(
         "year", 
         F.year(F.to_timestamp(F.col("DATE OCC"), "yyyy MMM dd hh:mm:ss a"))
     ).filter(F.col("year").isin([2020, 2021]))
 
-    # 2. Load Census Blocks (GeoJSON) - Robust Manual Parse
-    census_blocks_df = spark.read.format("geojson").load(data_paths["census_blocks"])
+    # 2. Load Census Blocks - ROBUST METHOD
+    # Instead of .format("geojson"), we read as standard JSON to handle nulls safely.
+    # We load the whole file as a JSON object, explode the features, and filter bad geometries.
+    
+    raw_json_df = spark.read.option("multiLine", "true").json(data_paths["census_blocks"])
+    
+    # Explode the 'features' array (Standard GeoJSON structure)
+    features_df = raw_json_df.select(F.explode(F.col("features")).alias("feature"))
+    
+    # Extract Properties and Geometry String safely
+    # We convert the geometry struct back to a JSON string so Sedona can parse it.
+    # Crucially, we FILTER null geometry strings before calling Sedona functions.
+    census_blocks_df = features_df.select(
+        F.col("feature.properties.COMM").alias("COMM"),
+        F.col("feature.properties.POP20").alias("POP20"),
+        F.col("feature.properties.ZCTA20").alias("ZCTA20"),
+        F.to_json(F.col("feature.geometry")).alias("geo_json_str")
+    ).filter(
+        F.col("geo_json_str").isNotNull() & (F.length(F.col("geo_json_str")) > 0)
+    ).withColumn(
+        "geometry", ST_GeomFromGeoJSON(F.col("geo_json_str"))
+    ).drop("geo_json_str")
 
     # 3. Load Income Data (CSV with ';' delimiter)
     # "Median Household Income ... delimitter ';'"
@@ -63,17 +82,11 @@ def query5_execution(spark, crime_df, census_blocks_df, income_df):
     )
 
     # 3. Prepare Census Data
-    # Ensure necessary columns exist (Geometry, COMM, POP20, ZCTA20)
-    # The _load_data function now ensures these columns are top-level
     census_df = census_blocks_df.select(
         F.col("geometry"),
-        F.col("properties.COMM"),
-        F.col("properties.POP20").cast(IntegerType()).alias("population"),
-        F.col("properties.ZCTA20").cast(IntegerType()).alias("geo_zip")
-    ).filter(
-        F.col("geometry").isNotNull() &
-        F.col("properties.COMM").isNotNull() &
-        F.col("population").isNotNull()  
+        F.col("COMM"),
+        F.col("POP20").cast(IntegerType()).alias("population"),
+        F.col("ZCTA20").cast(IntegerType()).alias("geo_zip")
     )
 
     # --- AGGREGATION: INCOME PER COMMUNITY ---
@@ -89,27 +102,23 @@ def query5_execution(spark, crime_df, census_blocks_df, income_df):
         "inner"
     )
 
+    # Weighted Average Income per Community
     comm_stats_df = blocks_with_income.groupBy("COMM").agg(
         F.sum("population").alias("total_pop"),
         (F.sum(F.col("parsed_income") * F.col("population")) / F.sum("population")).alias("avg_income")
-    ).filter(F.col("total_pop") > 0) # Filter out unpopulated areas
+    ).filter(F.col("total_pop") > 0)
 
 
     # --- SPATIAL JOIN: CRIMES PER COMMUNITY ---
 
-    # Join Crimes to Census Blocks (Spatial Join) to find which COMM they belong to.
-    # We join valid_crime_df points to census_df polygons.
-    
+    # Spatial Join: Points (Crimes) inside Polygons (Blocks)
     crime_joined_df = valid_crime_df.alias("c").join(
         census_df.alias("b"),
         F.expr("ST_Contains(b.geometry, c.crime_point)"),
         "inner"
     ).select("c.year", "b.COMM")
 
-    # Group by COMM to get crime counts
-    # We are calculating "Annual Mean Ratio".
-    # Total Crimes (2020+2021) / 2 = Average Annual Crimes
-    
+    # Count Crimes and Calculate Annual Average
     crime_counts_df = crime_joined_df.groupBy("COMM").agg(
         F.count("*").alias("total_crimes_2y")
     ).withColumn(
@@ -118,15 +127,13 @@ def query5_execution(spark, crime_df, census_blocks_df, income_df):
 
     # --- FINAL MERGE & RATE CALCULATION ---
 
-    # Join Income Stats and Crime Counts
     final_df = comm_stats_df.join(crime_counts_df, "COMM", "inner")
 
     # Calculate Crime Rate (Crimes per Person)
-    # "annual mean ratio of crimes per person"
     analysis_df = final_df.withColumn(
         "crime_rate",
         F.col("avg_annual_crimes") / F.col("total_pop")
-    ).select("COMM", "avg_income", "crime_rate").cache() # Cache for multiple actions (Correlations)
+    ).select("COMM", "avg_income", "crime_rate").cache() 
 
     # --- ANALYSIS ---
 
@@ -147,7 +154,6 @@ def query5_execution(spark, crime_df, census_blocks_df, income_df):
     bottom_10_corr = bottom_10_df.stat.corr("avg_income", "crime_rate")
     print(f"Bottom 10 Low Income Areas Correlation:     {bottom_10_corr:.4f}")
     
-    # Return the dataframe to allow explain plan if needed
     return analysis_df
 
 def run_query_5(spark, data_paths, explain=False):
@@ -163,7 +169,6 @@ def main():
     from utils.spark_setup import get_spark_session
     from utils.config import DATA_PATHS
 
-    # Resource Config
     config_options = {
         'spark.executor.instances': '2',
         'spark.executor.cores': '4',
@@ -176,9 +181,13 @@ def main():
     print("Running Query 5: Income vs Crime Rate Correlation")
     print("=" * 60)
     
-    # Run with explain=True to see join strategies
-    exec_time = run_query_5(spark, DATA_PATHS, explain=True)
-    print(f"Execution Time: {exec_time:.4f} seconds")
+    try: 
+        exec_time = run_query_5(spark, DATA_PATHS, explain=True)
+        print(f"Execution Time: {exec_time:.4f} seconds")
+    except Exception as e:
+        print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
     
     spark.stop()
 
