@@ -8,162 +8,210 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from pyspark.sql import functions as F
-from pyspark.sql.types import DoubleType, IntegerType
-# Import ST_GeomFromGeoJSON for manual parsing
-from sedona.spark.sql import ST_Point, ST_Contains, ST_GeomFromGeoJSON
+from pyspark.sql.types import DoubleType, LongType, StructType, StructField, StringType
+from pyspark.sql.functions import get_json_object, from_json
 from utils.timing import run_and_time
+
 
 def _load_data(spark, data_paths):
     """
-    Loads Crime, Census Blocks, and Income data.
+    Loads income data, census blocks, and crime data.
     """
-    # 1. Load Crime Data (2020-Present) and filter for 2020-2021
-    df_2020_present = spark.read.csv(data_paths["crime_data_2020_present"], header=True, inferSchema=True)
+    # Load Income Data
+    income_df = spark.read.option("header", "true") \
+        .option("delimiter", ";") \
+        .csv(data_paths["median_income"])
     
-    crime_df = df_2020_present.withColumn(
-        "year", 
-        F.year(F.to_timestamp(F.col("DATE OCC"), "yyyy MMM dd hh:mm:ss a"))
-    ).filter(F.col("year").isin([2020, 2021]))
-
-    # 2. Load Census Blocks - ROBUST METHOD
-    # Instead of .format("geojson"), we read as standard JSON to handle nulls safely.
-    # We load the whole file as a JSON object, explode the features, and filter bad geometries.
+    # Load Census Blocks - Read raw JSON and process in smaller chunks
+    blocks_raw = spark.read \
+        .option("multiLine", "false") \
+        .text(data_paths["census_blocks"])
     
-    raw_json_df = spark.read.option("multiLine", "true").json(data_paths["census_blocks"])
+    # Define schema for properties
+    properties_schema = StructType([
+        StructField("COMM", StringType(), True),
+        StructField("ZCTA20", StringType(), True),
+        StructField("POP20", LongType(), True)
+    ])
     
-    # Explode the 'features' array (Standard GeoJSON structure)
-    features_df = raw_json_df.select(F.explode(F.col("features")).alias("feature"))
+    # Process line by line (more memory efficient)
+    blocks_df = blocks_raw \
+        .filter(F.col("value").contains("\"type\": \"Feature\"")) \
+        .withColumn("properties", from_json(
+            get_json_object(F.col("value"), "$.properties"),
+            properties_schema
+        )) \
+        .withColumn("geometry_str", get_json_object(F.col("value"), "$.geometry")) \
+        .filter(
+            (F.col("properties.COMM").isNotNull()) &
+            (F.col("properties.ZCTA20").isNotNull()) &
+            (F.col("properties.POP20") > 0) &
+            (F.col("geometry_str").isNotNull())
+        ) \
+        .select(
+            F.col("properties.COMM").alias("COMM"),
+            F.col("properties.POP20").alias("POP20"),
+            F.col("properties.ZCTA20").alias("ZCTA20"),
+            F.expr("ST_GeomFromGeoJSON(geometry_str)").alias("block_geometry")
+        ).filter(
+            F.col("block_geometry").isNotNull()
+        )
     
-    # Extract Properties and Geometry String safely
-    # We convert the geometry struct back to a JSON string so Sedona can parse it.
-    # Crucially, we FILTER null geometry strings before calling Sedona functions.
-    census_blocks_df = features_df.select(
-        F.col("feature.properties.COMM").alias("COMM"),
-        F.col("feature.properties.POP20").alias("POP20"),
-        F.col("feature.properties.ZCTA20").alias("ZCTA20"),
-        F.to_json(F.col("feature.geometry")).alias("geo_json_str")
-    ).filter(
-        F.col("geo_json_str").isNotNull() & (F.length(F.col("geo_json_str")) > 0)
-    ).withColumn(
-        "geometry", ST_GeomFromGeoJSON(F.col("geo_json_str"))
-    ).drop("geo_json_str")
+    # Load Crime Data (2020-Present)
+    crime_df = spark.read.option("header", "true").csv(data_paths["crime_data_2020_present"])
+    
+    return income_df, blocks_df, crime_df
 
-    # 3. Load Income Data (CSV with ';' delimiter)
-    # "Median Household Income ... delimitter ';'"
-    income_df = spark.read.option("delimiter", ";").csv(data_paths["median_income"], header=True, inferSchema=True)
-
-    return crime_df, census_blocks_df, income_df
-
-def query5_execution(spark, crime_df, census_blocks_df, income_df):
+def query5_df(income_df, blocks_df, crime_df):
     """
-    Calculates correlation between Income and Crime Rate per Area (COMM).
+    Implementation of Query 5 using DataFrame API and Sedona Spatial Join.
     """
     
-    # --- PREPROCESSING ---
-
-    # 1. Clean Crime Data: Filter Null Island and Create Points
-    # "filter Null Island (0,0)"
-    valid_crime_df = crime_df.filter(
-        (F.col("LAT") != 0) & (F.col("LON") != 0) & 
-        F.col("LAT").isNotNull() & F.col("LON").isNotNull()
-    ).withColumn(
-        "crime_point", 
-        ST_Point(F.col("LON").cast("double"), F.col("LAT").cast("double"))
-    ).select("year", "crime_point") # Optimization: Keep only necessary columns
-
-    # 2. Clean Income Data
-    # Parse "$52,806" -> 52806.0
-    cleaned_income_df = income_df.withColumn(
-        "parsed_income",
+    # ==========================================
+    # 1. Process Income Data
+    # ==========================================
+    income_df = income_df.withColumn(
+        "Income", 
         F.regexp_replace(F.col("Estimated Median Income"), "[$,]", "").cast(DoubleType())
+    ).filter(
+        F.col("Income").isNotNull()
     ).select(
-        F.col("Zip Code").alias("income_zip"), 
-        F.col("parsed_income")
+        F.col("Zip Code").alias("ZipCode_Income"),
+        F.col("Income")
     )
 
-    # 3. Prepare Census Data
-    census_df = census_blocks_df.select(
-        F.col("geometry"),
+    # ==========================================
+    # 2. Process Census Blocks (GeoJSON)
+    # ==========================================
+    # CRITICAL FIX: Filter nulls FIRST, then check validity
+    blocks_filtered = blocks_df.filter(
+        (F.col("COMM").isNotNull()) & 
+        (F.col("ZCTA20").isNotNull()) & 
+        (F.col("POP20") > 0) &
+        (F.col("block_geometry").isNotNull())  # NULL CHECK FIRST!
+    ).select(
         F.col("COMM"),
-        F.col("POP20").cast(IntegerType()).alias("population"),
-        F.col("ZCTA20").cast(IntegerType()).alias("geo_zip")
+        F.col("POP20").cast(LongType()),
+        F.col("ZCTA20"),
+        F.col("block_geometry")
     )
 
-    # --- AGGREGATION: INCOME PER COMMUNITY ---
-    
-    # Join Census Blocks with Income based on Zip Code
-    # We calculate the Weighted Average Income for each COMM based on the population of its blocks.
-    # Logic: A COMM (Community) is composed of many Blocks. Each Block has a Zip (and thus Income) and Population.
-    # Avg_Income_COMM = Sum(Income_Block * Pop_Block) / Sum(Pop_Block)
-    
-    blocks_with_income = census_df.join(
-        cleaned_income_df,
-        census_df.geo_zip == cleaned_income_df.income_zip,
+    # ==========================================
+    # 3. Calculate Community Income & Population
+    # ==========================================
+    blocks_income_joined = blocks_filtered.join(
+        income_df,
+        blocks_filtered.ZCTA20 == income_df.ZipCode_Income,
         "inner"
     )
 
-    # Weighted Average Income per Community
-    comm_stats_df = blocks_with_income.groupBy("COMM").agg(
-        F.sum("population").alias("total_pop"),
-        (F.sum(F.col("parsed_income") * F.col("population")) / F.sum("population")).alias("avg_income")
-    ).filter(F.col("total_pop") > 0)
+    community_stats = blocks_income_joined.groupBy("COMM").agg(
+        F.sum("POP20").alias("Total_Population"),
+        (F.sum(F.col("POP20") * F.col("Income")) / F.sum("POP20")).alias("Avg_Income")
+    ).filter(
+        (F.col("Total_Population") > 0) & 
+        (F.col("Avg_Income").isNotNull())
+    )
 
-
-    # --- SPATIAL JOIN: CRIMES PER COMMUNITY ---
-
-    # Spatial Join: Points (Crimes) inside Polygons (Blocks)
-    crime_joined_df = valid_crime_df.alias("c").join(
-        census_df.alias("b"),
-        F.expr("ST_Contains(b.geometry, c.crime_point)"),
-        "inner"
-    ).select("c.year", "b.COMM")
-
-    # Count Crimes and Calculate Annual Average
-    crime_counts_df = crime_joined_df.groupBy("COMM").agg(
-        F.count("*").alias("total_crimes_2y")
+    # ==========================================
+    # 4. Process Crime Data
+    # ==========================================
+    crime_filtered = crime_df.withColumn(
+        "Year", F.year(F.to_timestamp(F.col("DATE OCC"), "yyyy MMM dd hh:mm:ss a"))
     ).withColumn(
-        "avg_annual_crimes", F.col("total_crimes_2y") / 2
+        "LAT_clean", F.col("LAT").cast(DoubleType())
+    ).withColumn(
+        "LON_clean", F.col("LON").cast(DoubleType())
+    ).filter(
+        (F.col("Year").isin([2020, 2021])) &
+        (F.col("LAT_clean").isNotNull()) & 
+        (F.col("LON_clean").isNotNull()) &
+        (F.col("LAT_clean") != 0.0) &
+        (F.col("LON_clean") != 0.0) &
+        (F.abs(F.col("LAT_clean")) > 0.001) &
+        (F.abs(F.col("LON_clean")) > 0.001) &
+        (F.col("LAT_clean").between(33.0, 35.0)) &
+        (F.col("LON_clean").between(-119.0, -117.0))
+    ).select(
+        F.expr("ST_Point(LON_clean, LAT_clean)").alias("crime_geometry")
+    ).filter(
+        F.col("crime_geometry").isNotNull()  # Filter nulls before validity check
+    ).filter(
+        F.expr("ST_IsValid(crime_geometry) = true")
+    )
+    
+    # ==========================================
+    # 5. Spatial Join: Crimes -> Communities
+    # ==========================================
+    blocks_geom_only = blocks_filtered.select("COMM", "block_geometry")
+    
+    # CRITICAL: Use left join to see what's not matching
+    crime_with_comm = crime_filtered.join(
+        blocks_geom_only,
+        F.expr("ST_Contains(block_geometry, crime_geometry)"),
+        "inner"
+    )
+    
+    community_crimes = crime_with_comm.groupBy("COMM").count().withColumnRenamed("count", "Total_Crimes")
+
+    # ==========================================
+    # 6. Final Calculation & Correlation
+    # ==========================================
+    final_df = community_stats.join(community_crimes, "COMM", "inner")
+    
+    final_df = final_df.withColumn(
+        "Crimes_Per_Person",
+        (F.col("Total_Crimes") / 2.0) / F.col("Total_Population")
+    )
+    
+    # Clean data for correlation
+    final_df = final_df.filter(
+        (F.col("Avg_Income").isNotNull()) &
+        (F.col("Crimes_Per_Person").isNotNull()) &
+        (~F.isnan("Avg_Income")) &
+        (~F.isnan("Crimes_Per_Person")) &
+        (F.col("Avg_Income") > 0) &
+        (F.col("Crimes_Per_Person") > 0)
     )
 
-    # --- FINAL MERGE & RATE CALCULATION ---
-
-    final_df = comm_stats_df.join(crime_counts_df, "COMM", "inner")
-
-    # Calculate Crime Rate (Crimes per Person)
-    analysis_df = final_df.withColumn(
-        "crime_rate",
-        F.col("avg_annual_crimes") / F.col("total_pop")
-    ).select("COMM", "avg_income", "crime_rate").cache() 
-
-    # --- ANALYSIS ---
-
-    print("\n--- Correlation Analysis (2020-2021) ---")
-
-    # 1. Overall Correlation
-    overall_corr = analysis_df.stat.corr("avg_income", "crime_rate")
-    print(f"Overall Correlation (Income vs Crime Rate): {overall_corr:.4f}")
-
-    # 2. Top 10 Income Areas
-    # "examining only the 10 areas with the highest ... income"
-    top_10_df = analysis_df.orderBy(F.col("avg_income").desc()).limit(10)
-    top_10_corr = top_10_df.stat.corr("avg_income", "crime_rate")
-    print(f"Top 10 High Income Areas Correlation:       {top_10_corr:.4f}")
-
-    # 3. Bottom 10 Income Areas
-    bottom_10_df = analysis_df.orderBy(F.col("avg_income").asc()).limit(10)
-    bottom_10_corr = bottom_10_df.stat.corr("avg_income", "crime_rate")
-    print(f"Bottom 10 Low Income Areas Correlation:     {bottom_10_corr:.4f}")
+    # Calculate correlations with error handling
+    try:
+        corr_all = final_df.stat.corr("Avg_Income", "Crimes_Per_Person")
+    except Exception as e:
+        print(f"Error calculating correlation for all: {e}")
+        final_df.select("Avg_Income", "Crimes_Per_Person").describe().show()
+        corr_all = None
     
-    return analysis_df
+    top_10_income = final_df.orderBy(F.col("Avg_Income").desc()).limit(10)
+    try:
+        corr_top_10 = top_10_income.stat.corr("Avg_Income", "Crimes_Per_Person")
+    except Exception as e:
+        print(f"Error calculating correlation for top 10: {e}")
+        corr_top_10 = None
+    
+    bottom_10_income = final_df.orderBy(F.col("Avg_Income").asc()).limit(10)
+    try:
+        corr_bottom_10 = bottom_10_income.stat.corr("Avg_Income", "Crimes_Per_Person")
+    except Exception as e:
+        print(f"Error calculating correlation for bottom 10: {e}")
+        corr_bottom_10 = None
+
+    print("\n" + "="*60)
+    print("QUERY 5 RESULTS: Income vs Crime Rate Correlation")
+    print("="*60)
+    print(f"Correlation (All Communities): {corr_all:.4f}" if corr_all is not None else "Correlation (All Communities): N/A")
+    print(f"Correlation (Top 10 Income):   {corr_top_10:.4f}" if corr_top_10 is not None else "Correlation (Top 10 Income): N/A")
+    print(f"Correlation (Bottom 10 Income):{corr_bottom_10:.4f}" if corr_bottom_10 is not None else "Correlation (Bottom 10 Income): N/A")
+    print("="*60 + "\n")
+    
+    return final_df
 
 def run_query_5(spark, data_paths, explain=False):
-    crime_df, census_blocks_df, income_df = _load_data(spark, data_paths)
-    
-    exec_time = run_and_time(
-        lambda: query5_execution(spark, crime_df, census_blocks_df, income_df),
+    income_df, blocks_df, crime_df = _load_data(spark, data_paths)
+    return run_and_time(
+        lambda: query5_df(income_df, blocks_df, crime_df),
         explain=explain
     )
-    return exec_time
 
 def main():
     from utils.spark_setup import get_spark_session
@@ -172,7 +220,7 @@ def main():
     config_options = {
         'spark.executor.instances': '2',
         'spark.executor.cores': '4',
-        'spark.executor.memory': '8g'
+        'spark.executor.memory': '8g',
     }
     
     spark = get_spark_session(app_name="Query5Test", config_options=config_options)
@@ -181,13 +229,8 @@ def main():
     print("Running Query 5: Income vs Crime Rate Correlation")
     print("=" * 60)
     
-    try: 
-        exec_time = run_query_5(spark, DATA_PATHS, explain=True)
-        print(f"Execution Time: {exec_time:.4f} seconds")
-    except Exception as e:
-        print(f"Error: {e}")
-        import traceback
-        traceback.print_exc()
+    exec_time = run_query_5(spark, DATA_PATHS, explain=True)
+    print(f"\nTotal Execution Time: {exec_time:.4f} seconds")
     
     spark.stop()
 
