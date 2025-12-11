@@ -14,15 +14,12 @@ from sedona.spark.sql import ST_Point, ST_DistanceSphere
 from utils.timing import run_and_time
 
 def _load_data(spark, data_paths):
-    """
-    Loads crime data and police stations data.
-    """
-    # Load Crime Data [cite: 26, 27]
+    # Load Crime Data
     df_2010_2019 = spark.read.csv(data_paths["crime_data_2010_2019"], header=True, inferSchema=True)
     df_2020_present = spark.read.csv(data_paths["crime_data_2020_present"], header=True, inferSchema=True)
     crime_df = df_2010_2019.unionByName(df_2020_present)
     
-    # Load Police Stations [cite: 34, 47]
+    # Load Police Stations
     stations_df = spark.read.csv(data_paths["police_stations"], header=True, inferSchema=True)
     
     return crime_df, stations_df
@@ -49,8 +46,6 @@ def query4_df(crime_df, stations_df):
     ).select("DR_NO", "crime_point") # Keep ID and geometry to reduce shuffle size
 
     # Create points for Police Stations
-    # Assuming standard columns 'x', 'y' or 'long', 'lat' in stations csv. 
-    # Based on standard LA datasets, police stations often have 'x' and 'y'.
     # We select DIVISION as the identifier.
     stations_geo = stations_df.withColumn(
         "station_point",
@@ -59,10 +54,9 @@ def query4_df(crime_df, stations_df):
 
     # 3. Find Closest Station
     # Strategy: 
-    # Since there are only 21 police stations[cite: 47], we can Broadcast Cross Join 
+    # Since there are only 21 police stations, we can Broadcast Cross Join 
     # the stations to the crime data. This avoids an expensive spatial join shuffle.
     # We then calculate distance and keep the minimum per crime.
-    
     joined_df = crime_geo.crossJoin(F.broadcast(stations_geo))
     
     # Calculate Distance (in meters) using ST_DistanceSphere
@@ -79,7 +73,7 @@ def query4_df(crime_df, stations_df):
         .filter(F.col("rnk") == 1) \
         .select("DIVISION", "distance_meters")
 
-    # 4. Aggregation [cite: 75]
+    # 4. Aggregation
     # Group by station, count incidents, average distance
     # Convert meters to kilometers for readability (matching spec example magnitude ~2.0)
     result_df = closest_station.groupBy("DIVISION").agg(
@@ -110,9 +104,6 @@ def main():
     from utils.spark_setup import get_spark_session
     from utils.config import DATA_PATHS
 
-    # Spec requires running with specific resources [cite: 103]
-    # Note: Resource config is handled by the submit script or session builder.
-    # Here we set default local config for testing.
     config_options = {
         'spark.executor.instances': '2',
         'spark.executor.cores': '1',

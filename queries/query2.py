@@ -15,12 +15,12 @@ def _load_data(spark, data_paths):
     """
     Loads crime data and race/ethnicity codes.
     """
-    # Load Crime Data (2010-2019 and 2020-Present) [cite: 26, 27]
+    # Load Crime Data (2010-2019 and 2020-Present)
     df_2010_2019 = spark.read.csv(data_paths["crime_data_2010_2019"], header=True, inferSchema=True)
     df_2020_present = spark.read.csv(data_paths["crime_data_2020_present"], header=True, inferSchema=True)
     crime_df = df_2010_2019.unionByName(df_2020_present)
     
-    # Load Race Codes [cite: 33]
+    # Load Race Codes
     re_codes_df = spark.read.csv(data_paths["race_codes"], header=True, inferSchema=True)
     
     return crime_df, re_codes_df
@@ -148,7 +148,7 @@ def main():
     from utils.spark_setup import get_spark_session
     from utils.config import DATA_PATHS
 
-    # Configuration based on specs: 4 executors, 1 core, 2GB memory [cite: 93]
+    # 4 executors, 1 core, 2GB memory
     config_options = {
         'spark.executor.instances': '4',
         'spark.executor.cores': '1',
