@@ -6,32 +6,6 @@ Semester project for "Advanced Database Systems" (NTUA, 2025).
 
 This project implements data processing and geospatial analytics over Los Angeles crime datasets using Apache Spark (DataFrame, SQL, RDD APIs), Hadoop, and Apache Sedona. It includes performance evaluation under different execution configurations.
 
-## Technologies
-
-- **Apache Spark**: Distributed data processing (DataFrame API, Spark SQL, RDD API)
-- **Apache Hadoop**: Distributed storage and processing framework
-- **Apache Sedona**: Geospatial data processing
-- **Python**: Implementation language
-
-## Features
-
-- Crime data processing and analysis
-- Geospatial analytics on LA crime data
-- Multiple Spark API implementations (DF, SQL, RDD)
-- Performance benchmarking across different configurations
-- Comparative analysis of execution strategies
-
-## Project Structure
-
-```
-la-crime-analytics-spark-hadoop/
-├── data/           # Crime datasets
-├── src/            # Source code
-├── notebooks/      # Jupyter notebooks for analysis
-├── results/        # Output and performance metrics
-└── docs/           # Documentation
-```
-
 ## Installation
 
 ```bash
@@ -52,8 +26,6 @@ pip install apache-sedona
 
 ## Usage
 
-### Running Queries
-
 > Below are the commands to run all queries with configuration
 > as specified in the project specifications
 
@@ -61,7 +33,7 @@ All queries are executed from the project root directory. Below are the commands
 
 ---
 
-#### Query 1: Aggravated Assault Victims by Age Group
+### Query 1: Aggravated Assault Victims by Age Group
 
 **Purpose**: Rank age groups of victims in incidents involving any form of "aggravated assault" (Children <18, Young adults 18-24, Adults 25-64, Seniors >64).
 
@@ -87,7 +59,7 @@ python queries/query1.py --mode rdd
 
 ---
 
-#### Query 2: Top 3 Victim Descent Groups per Year
+### Query 2: Top 3 Victim Descent Groups per Year
 
 **Purpose**: Find the 3 racial/ethnic groups with the most crime victims per year, showing count and percentage of total victims.
 
@@ -107,7 +79,7 @@ python queries/query2.py --mode sql
 
 ---
 
-#### Query 3: Crime Methods (MO Codes) Frequency Analysis
+### Query 3: Crime Methods (MO Codes) Frequency Analysis
 
 **Purpose**: Rank crime methods (modus operandi) by frequency of occurrence, mapping codes to their descriptions.
 
@@ -151,7 +123,7 @@ python queries/query3.py --mode rdd
 
 ---
 
-#### Query 4: Crimes per Police Station with Distance Analysis
+### Query 4: Crimes per Police Station with Distance Analysis
 
 **Purpose**: Calculate the number of crimes closest to each police station and the average distance from the station to those crime locations using geospatial analysis.
 
@@ -177,7 +149,7 @@ python queries/query4.py --executors 2 --cores 4 --memory 8g
 
 ---
 
-#### Query 5: Income vs Crime Rate Correlation Analysis
+### Query 5: Income vs Crime Rate Correlation Analysis
 
 **Purpose**: Calculate the correlation between median household income per capita and crime rate per capita (2020-2021) for LA communities. Repeat for top 10 and bottom 10 income communities.
 
