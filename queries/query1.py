@@ -1,5 +1,6 @@
 import sys
 import os
+import argparse
 
 # Add project root to sys.path for module imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -101,6 +102,11 @@ def query1_rdd(crime_df):
 # Main function to run selected mode of Query 1
 # -----------------------------
 def main():
+    parser = argparse.ArgumentParser(description='Run Query 1: Crime Analysis by Age Group')
+    parser.add_argument('--mode', type=str, default='df', choices=['df', 'df_udf', 'rdd'],
+                        help='Execution mode (default: df)')
+    args = parser.parse_args()
+    
     from utils.spark_setup import get_spark_session
     from utils.config import DATA_PATHS
 
@@ -111,8 +117,7 @@ def main():
     }
     spark = get_spark_session(app_name="Query1Test", config_options=config_options)
     
-    # Specify the mode here: "df", "df_udf", or "rdd"
-    MODE = "df"
+    MODE = args.mode
 
     print(f"\nRunning Query 1 in mode: {MODE}")
     

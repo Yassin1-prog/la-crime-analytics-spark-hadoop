@@ -1,5 +1,6 @@
 import sys
 import os
+import argparse
 
 # Add project root to sys.path for module imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -133,6 +134,11 @@ def query2_sql(spark, crime_df, re_codes_df):
 # Main Runner for Query 2
 # -----------------------------
 def main():
+    parser = argparse.ArgumentParser(description='Run Query 2: Crime Analysis by Victim Descent')
+    parser.add_argument('--mode', type=str, default='df', choices=['df', 'sql'],
+                        help='Execution mode (default: df)')
+    args = parser.parse_args()
+    
     from utils.spark_setup import get_spark_session
     from utils.config import DATA_PATHS
 
@@ -145,8 +151,7 @@ def main():
     
     spark = get_spark_session(app_name="Query2Test", config_options=config_options)
     
-    # Specify the mode here: "df" or "sql"
-    MODE = "df"
+    MODE = args.mode
 
     print(f"\nRunning Query 2 in mode: {MODE}")
     

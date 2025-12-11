@@ -1,5 +1,6 @@
 import sys
 import os
+import argparse
 
 # Add project root to sys.path for module imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -91,19 +92,29 @@ def query4_df(crime_df, stations_df):
     return final_df
 
 def main():
+    parser = argparse.ArgumentParser(description='Run Query 4: Nearest Police Stations')
+    parser.add_argument('--executors', type=str, default='2',
+                        help='Number of executor instances (default: 2)')
+    parser.add_argument('--cores', type=str, default='1',
+                        help='Number of cores per executor (default: 1)')
+    parser.add_argument('--memory', type=str, default='2g',
+                        help='Memory per executor (default: 2g)')
+    args = parser.parse_args()
+    
     from utils.spark_setup import get_spark_session
     from utils.config import DATA_PATHS
 
     config_options = {
-        'spark.executor.instances': '2',
-        'spark.executor.cores': '1',
-        'spark.executor.memory': '2g'
+        'spark.executor.instances': args.executors,
+        'spark.executor.cores': args.cores,
+        'spark.executor.memory': args.memory
     }
     
     spark = get_spark_session(app_name="Query4Test", config_options=config_options)
     
     print("\n" + "=" * 60)
     print("Running Query 4: Nearest Police Stations")
+    print(f"Config: {args.executors} executors, {args.cores} cores, {args.memory} memory")
     print("=" * 60)
     
     crime_df, stations_df = _load_data(spark, DATA_PATHS)
