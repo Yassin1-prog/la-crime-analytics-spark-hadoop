@@ -3,8 +3,13 @@ import time
 def run_and_time(fn, explain = False, join_strategy_name = None):
     start = time.time()
     result = fn()
-    result.show(truncate = False)
+    # cache to avoid re-executing when calling show after write
+    result.cache()
+    result.write.format("noop").mode("overwrite").save()
     end = time.time()
+
+    # used after timer to avoid including formatting in comparison
+    result.show(truncate = False)
 
     if explain:
         print("\n" + "=" * 80)
