@@ -156,13 +156,6 @@ def query5_df(income_df, blocks_raw, crime_df):
     
     return final_df
 
-def run_query_5(spark, data_paths, explain=False):
-    income_df, blocks_raw, crime_df = _load_data(spark, data_paths)
-    return run_and_time(
-        lambda: query5_df(income_df, blocks_raw, crime_df),
-        explain=explain
-    )
-
 def main():
     from utils.spark_setup import get_spark_session
     from utils.config import DATA_PATHS
@@ -179,7 +172,12 @@ def main():
     print("Running Query 5: Income vs Crime Rate Correlation")
     print("=" * 60)
     
-    exec_time = run_query_5(spark, DATA_PATHS, explain=True)
+    income_df, blocks_raw, crime_df = _load_data(spark, DATA_PATHS)
+    
+    exec_time = run_and_time(
+        lambda: query5_df(income_df, blocks_raw, crime_df),
+        explain=True
+    )
     print(f"\nTotal Execution Time: {exec_time:.4f} seconds")
     
     spark.stop()

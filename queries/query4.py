@@ -90,16 +90,6 @@ def query4_df(crime_df, stations_df):
 
     return final_df
 
-def run_query_4(spark, data_paths, explain=False):
-    crime_df, stations_df = _load_data(spark, data_paths)
-    
-    # Pass explain=True to run_and_time to see the join strategy chosen by Spark 
-    exec_time = run_and_time(
-        lambda: query4_df(crime_df, stations_df), 
-        explain=explain
-    )
-    return exec_time
-
 def main():
     from utils.spark_setup import get_spark_session
     from utils.config import DATA_PATHS
@@ -116,8 +106,13 @@ def main():
     print("Running Query 4: Nearest Police Stations")
     print("=" * 60)
     
+    crime_df, stations_df = _load_data(spark, DATA_PATHS)
+    
     # We enable explain to analyze the Join Strategy (BroadcastNestedLoopJoin likely)
-    exec_time = run_query_4(spark, DATA_PATHS, explain=True)
+    exec_time = run_and_time(
+        lambda: query4_df(crime_df, stations_df), 
+        explain=True
+    )
     print(f"Execution Time: {exec_time:.4f} seconds")
     
     spark.stop()

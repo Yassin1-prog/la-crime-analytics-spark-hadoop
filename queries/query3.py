@@ -106,24 +106,6 @@ def query3_rdd(crime_df, mo_codes_df):
 # -----------------------------
 # Main function to run all modes of Query 3
 # -----------------------------
-def run_query_3(spark, data_paths, mode="df", join_strategy=None, explain=False):
-    crime_df = _load_crime_df(spark, data_paths)
-    mo_codes_df = _load_mo_codes(spark, data_paths["mo_codes"])
-
-    if mode == "df":
-        exec_time = run_and_time(
-            lambda: query3_df(crime_df, mo_codes_df, join_strategy),
-            explain=explain,
-            join_strategy=join_strategy
-        )        
-    elif mode == "rdd":
-        exec_time = run_and_time(lambda: query3_rdd(crime_df, mo_codes_df))
-    else:
-        raise ValueError("Invalid mode. Use 'df' or 'rdd'.")
-    
-    return exec_time
-
-
 def main():
     from utils.spark_setup import get_spark_session
     from utils.config import DATA_PATHS
@@ -138,6 +120,9 @@ def main():
     # Specify the mode here: "df" or "rdd"
     MODE = "df"
     
+    crime_df = _load_crime_df(spark, DATA_PATHS)
+    mo_codes_df = _load_mo_codes(spark, DATA_PATHS["mo_codes"])
+    
     # For DataFrame mode, test different join strategies
     # Available strategies: None (let optimizer decide), "BROADCAST", "MERGE", 
     # "SHUFFLE_HASH", "SHUFFLE_REPLICATE_NL"
@@ -149,41 +134,51 @@ def main():
         
         # Test without hint (optimizer's choice)
         print("\n--- Optimizer's Choice (No Hint) ---")
-        exec_time = run_query_3(
-            spark, DATA_PATHS, mode="df", join_strategy=None, explain=True
-        )
+        exec_time = run_and_time(
+            lambda: query3_df(crime_df, mo_codes_df, None),
+            explain=True,
+            join_strategy=None
+        )        
         print(f"Execution Time: {exec_time:.4f} seconds")
         
         # Uncomment to test other strategies:
 
         # print("\n--- With BROADCAST Join Strategy ---")
-        # exec_time = run_query_3(
-        #     spark, DATA_PATHS, mode="df", join_strategy="BROADCAST", explain=True
+        # exec_time = run_and_time(
+        #     lambda: query3_df(crime_df, mo_codes_df, "BROADCAST"),
+        #     explain=True,
+        #     join_strategy="BROADCAST"
         # )
         # print(f"Execution Time: {exec_time:.4f} seconds")
         
         # print("\n--- With MERGE Join Strategy ---")
-        # exec_time = run_query_3(
-        #     spark, DATA_PATHS, mode="df", join_strategy="MERGE", explain=True
+        # exec_time = run_and_time(
+        #     lambda: query3_df(crime_df, mo_codes_df, "MERGE"),
+        #     explain=True,
+        #     join_strategy="MERGE"
         # )
         # print(f"Execution Time: {exec_time:.4f} seconds")
         
         # print("\n--- With SHUFFLE_HASH Join Strategy ---")
-        # exec_time = run_query_3(
-        #     spark, DATA_PATHS, mode="df", join_strategy="SHUFFLE_HASH", explain=True
+        # exec_time = run_and_time(
+        #     lambda: query3_df(crime_df, mo_codes_df, "SHUFFLE_HASH"),
+        #     explain=True,
+        #     join_strategy="SHUFFLE_HASH"
         # )
         # print(f"Execution Time: {exec_time:.4f} seconds")
         
         # print("\n--- With SHUFFLE_REPLICATE_NL Join Strategy ---")
-        # exec_time = run_query_3(
-        #     spark, DATA_PATHS, mode="df", join_strategy="SHUFFLE_REPLICATE_NL", explain=True
+        # exec_time = run_and_time(
+        #     lambda: query3_df(crime_df, mo_codes_df, "SHUFFLE_REPLICATE_NL"),
+        #     explain=True,
+        #     join_strategy="SHUFFLE_REPLICATE_NL"
         # )
         # print(f"Execution Time: {exec_time:.4f} seconds")
         
     else:
         # RDD mode
         print(f"\nRunning Query 3 in mode: {MODE}")
-        exec_time = run_query_3(spark, DATA_PATHS, mode=MODE)
+        exec_time = run_and_time(lambda: query3_rdd(crime_df, mo_codes_df))
         print(f"Execution Time: {exec_time:.4f} seconds")
     
     spark.stop()

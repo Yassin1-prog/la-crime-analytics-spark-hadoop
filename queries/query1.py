@@ -98,23 +98,8 @@ def query1_rdd(crime_df):
     return result_df
 
 # -----------------------------
-# Main function to run all modes of Query 1
+# Main function to run selected mode of Query 1
 # -----------------------------
-def run_query_1(spark, data_paths, mode="df"):
-    crime_df = _load_crime_df(spark, data_paths)
-
-    if mode == "df":
-        exec_time = run_and_time(lambda: query1_df(crime_df))
-    elif mode == "df_udf":
-        exec_time = run_and_time(lambda: query1_df_udf(crime_df))
-    elif mode == "rdd":
-        exec_time = run_and_time(lambda: query1_rdd(crime_df))
-    else:
-        raise ValueError("Invalid mode. Use 'df', 'df_udf', or 'rdd'.")
-    
-    return exec_time
-
-
 def main():
     from utils.spark_setup import get_spark_session
     from utils.config import DATA_PATHS
@@ -130,7 +115,18 @@ def main():
     MODE = "df"
 
     print(f"\nRunning Query 1 in mode: {MODE}")
-    exec_time = run_query_1(spark, DATA_PATHS, mode=MODE)
+    
+    crime_df = _load_crime_df(spark, DATA_PATHS)
+
+    if MODE == "df":
+        exec_time = run_and_time(lambda: query1_df(crime_df))
+    elif MODE == "df_udf":
+        exec_time = run_and_time(lambda: query1_df_udf(crime_df))
+    elif MODE == "rdd":
+        exec_time = run_and_time(lambda: query1_rdd(crime_df))
+    else:
+        raise ValueError("Invalid mode. Use 'df', 'df_udf', or 'rdd'.")
+    
     print(f"Execution Time: {exec_time:.4f} seconds")
     
     spark.stop()
