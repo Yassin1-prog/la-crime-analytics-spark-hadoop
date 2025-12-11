@@ -53,12 +53,8 @@ def query4_df(crime_df, stations_df):
         ST_Point(F.col("x").cast("double"), F.col("y").cast("double"))
     ).select(F.col("DIVISION"), F.col("station_point"))
 
-    # 3. Find Closest Station
-    # Strategy: 
-    # Since there are only 21 police stations, we can Broadcast Cross Join 
-    # the stations to the crime data. This avoids an expensive spatial join shuffle.
-    # We then calculate distance and keep the minimum per crime.
-    joined_df = crime_geo.crossJoin(F.broadcast(stations_geo))
+    # 3. Find Closest Station (cartesian/cross join)
+    joined_df = crime_geo.crossJoin(stations_geo)
     
     # Calculate Distance (in meters) using ST_DistanceSphere
     # ST_Distance would return degrees (Euclidean), Sphere returns meters on earth surface
