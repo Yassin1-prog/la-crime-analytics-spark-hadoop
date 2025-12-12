@@ -18,19 +18,11 @@ def _load_crime_df(spark, crime_data_paths):
     return crime_df
 
 
-def _load_mo_codes(spark, mo_codes_path):
-    # Read as text file
-    text_rdd = spark.sparkContext.textFile(mo_codes_path)
-    
-    # Parse each line: split on first space
-    def parse_line(line):
-        parts = line.split(' ', 1)
-        if len(parts) == 2:
-            return (parts[0].strip(), parts[1].strip())
-        return None
-    
-    parsed_rdd = text_rdd.map(parse_line).filter(lambda x: x is not None)
-    mo_codes_df = parsed_rdd.toDF(["Code", "Description"])
+def _load_mo_codes(spark, mo_codes_path):    
+    mo_codes_df = spark.read.text(mo_codes_path).select(
+        F.regexp_extract(F.col("value"), r"^(\d{4})", 1).alias("Code"),
+        F.regexp_extract(F.col("value"), r"^\d{4}\s+(.+)$", 1).alias("Description")
+    ).filter(F.col("Code") != "")
     
     return mo_codes_df
 
@@ -143,13 +135,13 @@ def main():
             explain=True,
             join_strategy_name=strategy_name
         )        
-        print(f"Execution Time: {exec_time:.4f} seconds")
+        print(f"Execution Time: {exec_time:.4f} seconds\n")
         
     else:
         # RDD mode
         print(f"\nRunning Query 3 in mode: {MODE}")
         exec_time = run_and_time(lambda: query3_rdd(crime_df, mo_codes_df))
-        print(f"Execution Time: {exec_time:.4f} seconds")
+        print(f"Execution Time: {exec_time:.4f} seconds\n")
     
     spark.stop()
 

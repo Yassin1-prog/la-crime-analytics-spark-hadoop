@@ -164,7 +164,7 @@ def main():
     else:
         raise ValueError("Invalid mode. Use 'df' or 'sql'.")
     
-    print(f"Execution Time: {exec_time:.4f} seconds")
+    print(f"Execution Time: {exec_time:.4f} seconds\n")
     
     spark.stop()
 

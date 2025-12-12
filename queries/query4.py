@@ -120,7 +120,7 @@ def main():
         lambda: query4_df(crime_df, stations_df), 
         explain=True
     )
-    print(f"Execution Time: {exec_time:.4f} seconds")
+    print(f"Execution Time: {exec_time:.4f} seconds\n")
     
     spark.stop()
 

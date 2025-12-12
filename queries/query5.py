@@ -189,7 +189,7 @@ def main():
         lambda: query5_df(income_df, blocks_raw, crime_df),
         explain=True
     )
-    print(f"\nTotal Execution Time: {exec_time:.4f} seconds")
+    print(f"\nTotal Execution Time: {exec_time:.4f} seconds\n")
     
     spark.stop()
 

@@ -30,6 +30,8 @@ def get_spark_session(app_name="AdvancedDBProject", config_options={}):
         builder = builder.config(key, value)
 
     spark = builder.getOrCreate()
+
+    spark.sparkContext.setLogLevel("ERROR")
     
     try:
         from sedona.register import SedonaRegistrator
