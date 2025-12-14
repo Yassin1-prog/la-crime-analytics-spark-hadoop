@@ -15,6 +15,10 @@ def _load_crime_df(spark, crime_data_paths):
     df_2010_2019 = spark.read.csv(crime_data_paths["crime_data_2010_2019"], header=True, inferSchema=True)
     df_2020_present = spark.read.csv(crime_data_paths["crime_data_2020_present"], header=True, inferSchema=True)
     crime_df = df_2010_2019.unionByName(df_2020_present)
+
+    # Drop duplicate DR_NO values (keep first occurrence)
+    crime_df = crime_df.dropDuplicates(["DR_NO"])
+
     return crime_df
 
 

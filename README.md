@@ -24,6 +24,8 @@ java -version
 pip install apache-sedona
 ```
 
+> it is expected that the datasets are available in AWS S3 cloud in //initial-notebook-data-bucket-dblab-905418150721/
+
 ## Usage
 
 > Below are the commands to run all queries with configuration

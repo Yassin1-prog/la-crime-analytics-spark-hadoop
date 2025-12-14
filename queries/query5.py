@@ -27,6 +27,9 @@ def _load_data(spark, data_paths):
     
     # Load Crime Data (2020-Present)
     crime_df = spark.read.option("header", "true").csv(data_paths["crime_data_2020_present"])
+
+    # Drop duplicate DR_NO values (keep first occurrence)
+    crime_df = crime_df.dropDuplicates(["DR_NO"])
     
     return income_df, blocks_raw, crime_df
 
